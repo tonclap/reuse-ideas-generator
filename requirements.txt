@@ -1,0 +1,3 @@
+# Utility dependencies. Add project-specific packages below.
+python-dotenv>=1.0
+PyYAML>=6.0
