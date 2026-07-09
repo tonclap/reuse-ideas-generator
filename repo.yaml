@@ -1,5 +1,7 @@
-type: small-tool
-status: active
+﻿type: small-tool
+status: todo
 deploy: none
 owner: dyachkov.gregory
-created: YYYY-MM-DD
+created: 2026-06-06
+stage: prototype
+done: false
