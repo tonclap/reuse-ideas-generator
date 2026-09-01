@@ -18,9 +18,10 @@
 | [INTENTION.md](INTENTION.md) | Зачем всё это и кто участвует |
 | [AGENTS.md](AGENTS.md) | Точка входа для агента: карта документов и подхода |
 | [COMMON_DECISION.md](COMMON_DECISION.md) | Реестр решений: подпись — approve в PR, не галочка в таблице |
-| [OPEN_ISSUES.md](OPEN_ISSUES.md) | Нерешённое: вопрос, обе позиции, цена промедления |
+| [issues с меткой `ask`](../../issues?q=is%3Aissue+label%3Aask) | Нерешённое: вопрос, обе позиции, цена промедления. Голос — реакция на комментарий-вариант |
 | [ROLES.md](ROLES.md) | Пять ролей и кто их ведёт |
 | [TASK_DESC.md](TASK_DESC.md) | Постановка: гипотеза, набор, протокол прогона, критерий |
+| [TODO.md](TODO.md) | Работа до вердикта «прототип ✓»: 16 задач по волнам и ролям |
 | [research/](research/) | Две разведки explore — техническая и бизнесовая |
 | [about/KNOWN_ISSUES.md](about/KNOWN_ISSUES.md) | Известные проблемы |
 | [CHANGELOG.md](CHANGELOG.md) | История значимых изменений |
