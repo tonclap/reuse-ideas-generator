@@ -33,3 +33,6 @@ output/*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Портфельная метадата владельца, не относится к проекту
+repo.yaml
