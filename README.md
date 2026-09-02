@@ -25,6 +25,7 @@
 | [research/](research/) | Две разведки explore — техническая и бизнесовая |
 | [about/KNOWN_ISSUES.md](about/KNOWN_ISSUES.md) | Известные проблемы |
 | [CHANGELOG.md](CHANGELOG.md) | История значимых изменений |
+| [judging/](judging/) | Протокол судейства выдачи: что проверяет машина, что человек, форма разметки |
 | `input/` | Фотонабор: 15 снимков, закоммичены по [D-018](COMMON_DECISION.md) |
 | `main.py`, `config.yaml`, `.env.example` | Заготовка запуска: конфиг несекретный, секреты — в `.env` |
 
