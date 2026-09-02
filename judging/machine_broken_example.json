@@ -1,0 +1,26 @@
+{
+  "category": "undetermined",
+  "visible_details": [
+    "поверхность в мелких царапинах",
+    "угол предмета срезан краем кадра"
+  ],
+  "reuse_applicable": false,
+  "not_applicable_reason": null,
+  "ideas": [
+    {
+      "idea": "Идея, которой при отказе быть не должно",
+      "visible_detail": "прочный пластик: материал выдержит нагрузку",
+      "steps": [
+        "Шаг один"
+      ],
+      "cost": {
+        "money": "0 ₽",
+        "time": "около 10 минут",
+        "materials": []
+      },
+      "first_action": "Взять предмет в руки"
+    }
+  ],
+  "clarifying_question": null,
+  "uncertainty_note": null
+}
