@@ -35,7 +35,10 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def load_config() -> dict:
-    load_dotenv(ROOT / ".env")
+    # override=True обязателен: без него уже установленная переменная окружения
+    # побеждает .env, файл читается вхолостую, и прогон уходит на чужой счёт молча
+    # (у каждого свой ключ и свой баланс — D-027 ред. 2).
+    load_dotenv(ROOT / ".env", override=True)
     with CONFIG_PATH.open(encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
@@ -112,10 +115,20 @@ def main() -> int:
     parser.add_argument("items", nargs="*", help="имена без расширения (item_01 …); по умолчанию все")
     parser.add_argument("--run-id", help="идентификатор прогона; по умолчанию отметка времени")
     parser.add_argument("--dry-run", action="store_true", help="показать план и не делать вызовов")
+    parser.add_argument("--model", help="переопределить route.model, не трогая config.yaml")
+    parser.add_argument("--provider-tag", help="переопределить route.provider_tag, не трогая config.yaml")
     args = parser.parse_args()
 
     config = load_config()
     route = config["route"]
+    # Замер цены и качества (T-14) требует одного набора на 2-3 маршрутах. Правка
+    # config.yaml — конфигурация прогона и идёт через PR (D-003), то есть три прогона
+    # стоили бы трёх пул-реквестов. Фактический маршрут пишется в run.json ниже, так
+    # что воспроизводимость держится на логе, а не на файле.
+    if args.model:
+        route["model"] = args.model
+    if args.provider_tag:
+        route["provider_tag"] = args.provider_tag
 
     input_dir = ROOT / config.get("input_dir", "input")
     photos = sorted(p for p in input_dir.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
@@ -139,8 +152,18 @@ def main() -> int:
         print(f"папка прогона уже существует и не пуста: {run_dir}", file=sys.stderr)
         return 2
 
-    system_prompt = (ROOT / config["prompt_path"]).read_text(encoding="utf-8")
-    schema = json.loads((ROOT / config["schema_path"]).read_text(encoding="utf-8"))
+    # Промпт и схема — вход прогона: нет файла или схема не разбирается, значит прогон
+    # не начался, и это код 2, а не трейсбек.
+    try:
+        system_prompt = (ROOT / config["prompt_path"]).read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"не читается prompt_path {config['prompt_path']}: {exc}", file=sys.stderr)
+        return 2
+    try:
+        schema = json.loads((ROOT / config["schema_path"]).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"не читается schema_path {config['schema_path']}: {exc}", file=sys.stderr)
+        return 2
 
     print(f"прогон {run_id}: {len(photos)} фото, маршрут {route['model']} @ {route['provider_tag']}")
     if args.dry_run:
@@ -155,7 +178,9 @@ def main() -> int:
         )
         return 2
 
-    run_dir.mkdir(parents=True)
+    # exist_ok=True: пустую папку с тем же run-id проверка выше пропускает — она же
+    # пустая, — и без этого прогон падал бы трейсбеком вместо кода 2.
+    run_dir.mkdir(parents=True, exist_ok=True)
     log = {
         "run_id": run_id,
         "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -167,6 +192,18 @@ def main() -> int:
     }
     total_cost = 0.0
     failed = 0
+
+    def write_log() -> None:
+        """Лог переписывается после каждого фото, а не в конце.
+
+        На 100+ фото (D-026) прогон, убитый на середине, иначе не оставляет ничего:
+        сырые ответы на диске есть, а маршрут, время и стоимость по ним — нет.
+        """
+        (run_dir / "run.json").write_text(
+            json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    write_log()
 
     for photo in photos:
         started = time.monotonic()
@@ -202,13 +239,16 @@ def main() -> int:
         if entry.get("error") or not entry.get("valid"):
             failed += 1
         log["items"].append(entry)
+        log["total_cost"] = round(total_cost, 6)
+        log["failed"] = failed
+        write_log()
         print(f"  {photo.stem}: {'ok' if entry.get('valid') else 'СБОЙ — ' + str(entry.get('error'))}"
               f" ({entry['seconds']} c)")
 
     log["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
     log["total_cost"] = round(total_cost, 6)
     log["failed"] = failed
-    (run_dir / "run.json").write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_log()
 
     print(f"готово: {len(photos) - failed}/{len(photos)} валидных, ${total_cost:.6f}, {run_dir}")
     return 1 if failed else 0
