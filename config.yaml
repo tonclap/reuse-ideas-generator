@@ -15,6 +15,11 @@ route:
   provider_tag: google-ai-studio
   allow_fallbacks: false    # иначе при отказе провайдера ответ придёт с другого маршрута молча
   require_parameters: true  # маршрут обязан поддерживать response_format, а не проглотить его
+  # null (или отсутствие ключа) — не отправлять параметр вовсе. Эндпоинт, который его не
+  # принимает, вместе с require_parameters: true отбивает вызов 404 ещё до модели.
   temperature: 0
+  # Например {effort: minimal}. Без этого reasoning-маршруты уводят весь max_tokens в
+  # рассуждение и возвращают пустой content — деньги списаны, ответа нет (#53).
+  reasoning: null
   max_tokens: 3000
   timeout_sec: 180
