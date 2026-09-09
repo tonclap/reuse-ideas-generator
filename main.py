@@ -55,14 +55,13 @@ def encode_image(path: Path) -> str:
 
 def build_payload(config: dict, system_prompt: str, schema: dict, image_url: str) -> dict:
     route = config["route"]
-    return {
+    payload = {
         "model": route["model"],
         "provider": {
             "only": [route["provider_tag"]],
             "allow_fallbacks": route["allow_fallbacks"],
             "require_parameters": route["require_parameters"],
         },
-        "temperature": route["temperature"],
         "max_tokens": route["max_tokens"],
         "usage": {"include": True},
         "messages": [
@@ -74,28 +73,65 @@ def build_payload(config: dict, system_prompt: str, schema: dict, image_url: str
             "json_schema": {"name": "reuse_ideas", "strict": True, "schema": schema},
         },
     }
+    # temperature уходит, только если маршрут её принимает. Эндпоинт, который её не
+    # поддерживает, вместе с require_parameters: true отбивает вызов 404 ещё до модели —
+    # так теряется openai/gpt-5-nano (about/KNOWN_ISSUES.md, T-11).
+    if route.get("temperature") is not None:
+        payload["temperature"] = route["temperature"]
+    # Без reasoning маршруты этого класса уводят весь max_tokens в рассуждение и
+    # возвращают пустой content: xiaomi/mimo-v2.5 @ deepinfra/fp8 — 2999-3000 токенов
+    # рассуждения из 3000 на всех проверенных фото, вызов в 6-7 раз дороже рабочего и
+    # без результата (калибровка T-14, #53).
+    if route.get("reasoning"):
+        payload["reasoning"] = route["reasoning"]
+    return payload
 
 
 def check_answer(body: dict, schema: dict) -> dict:
     """Разбирает ответ маршрута. Ничего не чинит — только называет, что пришло."""
-    result = {"finish_reason": None, "cost": None, "parsed": None, "valid": False, "error": None}
+    result = {
+        "finish_reason": None,
+        "cost": None,
+        "reasoning_tokens": None,
+        "parsed": None,
+        "valid": False,
+        "failure": None,
+        "error": None,
+    }
     try:
         choice = body["choices"][0]
     except (KeyError, IndexError):
+        result["failure"] = "no_choices"
         result["error"] = "в ответе нет choices"
         return result
 
     result["finish_reason"] = choice.get("finish_reason")
-    result["cost"] = (body.get("usage") or {}).get("cost")
+    usage = body.get("usage") or {}
+    result["cost"] = usage.get("cost")
+    result["reasoning_tokens"] = (usage.get("completion_tokens_details") or {}).get(
+        "reasoning_tokens"
+    )
 
     content = (choice.get("message") or {}).get("content")
     if not content:
-        result["error"] = "пустой content"
+        # Пустой content при finish_reason: length — не «ответ не валиден», а ответа нет:
+        # весь max_tokens ушёл в рассуждение. Для доли валидных ответов (метрика маршрута,
+        # T-14) это разные события, и различать их обязан лог, а не читатель лога.
+        if result["finish_reason"] == "length":
+            result["failure"] = "empty_content_length"
+            result["error"] = (
+                "пустой content при finish_reason: length — бюджет ответа ушёл в рассуждение"
+                f" (reasoning_tokens: {result['reasoning_tokens']})"
+            )
+        else:
+            result["failure"] = "empty_content"
+            result["error"] = "пустой content"
         return result
 
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
+        result["failure"] = "not_json"
         result["error"] = f"content не разбирается как JSON: {exc}"
         return result
 
@@ -104,6 +140,7 @@ def check_answer(body: dict, schema: dict) -> dict:
         jsonschema.validate(parsed, schema)
         result["valid"] = True
     except jsonschema.ValidationError as exc:
+        result["failure"] = "schema"
         result["error"] = f"ответ не валиден по схеме: {exc.message}"
     return result
 
@@ -117,6 +154,15 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="показать план и не делать вызовов")
     parser.add_argument("--model", help="переопределить route.model, не трогая config.yaml")
     parser.add_argument("--provider-tag", help="переопределить route.provider_tag, не трогая config.yaml")
+    parser.add_argument(
+        "--reasoning-effort",
+        help="передать маршруту reasoning.effort (minimal/low/medium/high), не трогая config.yaml",
+    )
+    parser.add_argument(
+        "--no-temperature",
+        action="store_true",
+        help="не отправлять temperature: есть эндпоинты, которые её не принимают",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -129,6 +175,10 @@ def main() -> int:
         route["model"] = args.model
     if args.provider_tag:
         route["provider_tag"] = args.provider_tag
+    if args.reasoning_effort:
+        route["reasoning"] = {"effort": args.reasoning_effort}
+    if args.no_temperature:
+        route["temperature"] = None
 
     input_dir = ROOT / config.get("input_dir", "input")
     photos = sorted(p for p in input_dir.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
@@ -223,16 +273,30 @@ def main() -> int:
                 json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             if response.status_code != 200:
+                entry["failure"] = "http"
                 entry["error"] = f"http {response.status_code}: {json.dumps(body, ensure_ascii=False)[:300]}"
             else:
                 checked = check_answer(body, schema)
-                entry.update({k: checked[k] for k in ("finish_reason", "cost", "valid", "error")})
+                entry.update(
+                    {
+                        k: checked[k]
+                        for k in (
+                            "finish_reason",
+                            "cost",
+                            "reasoning_tokens",
+                            "valid",
+                            "failure",
+                            "error",
+                        )
+                    }
+                )
                 if checked["parsed"] is not None:
                     (run_dir / f"{photo.stem}.answer.json").write_text(
                         json.dumps(checked["parsed"], ensure_ascii=False, indent=2), encoding="utf-8"
                     )
                 total_cost += checked["cost"] or 0.0
         except (requests.RequestException, ValueError) as exc:
+            entry["failure"] = "exception"
             entry["error"] = f"{type(exc).__name__}: {exc}"
 
         entry["seconds"] = round(time.monotonic() - started, 2)

@@ -5,6 +5,22 @@
 
 ## [Unreleased]
 
+- 2026-09-09 · Код прогона и reasoning-маршруты (T-18, [#53](../../issues/53)): `temperature`
+  и `reasoning` стали параметрами маршрута, а не константами в коде. `temperature: null` в
+  `config.yaml` (или флаг `--no-temperature`) убирает параметр из вызова целиком — эндпоинт,
+  который его не принимает, вместе с `require_parameters: true` отбивал вызов `404` ещё до
+  модели. `reasoning` в `config.yaml` и флаг `--reasoning-effort` передают маршруту бюджет
+  рассуждения. Пустой `content` при `finish_reason: length` пишется в лог **отдельной**
+  причиной (`failure: empty_content_length`) с числом `reasoning_tokens`, а не общим «ответ не
+  валиден»: для доли валидных ответов это разные события. Поле `failure` появилось у каждой
+  записи лога (`http`, `no_choices`, `empty_content`, `not_json`, `schema`, `exception`).
+  **Проверено четырьмя вызовами, $0.006 суммарно:** `gpt-5-nano` @ `openai` с
+  `--no-temperature --reasoning-effort minimal` дал валидный ответ по схеме (было — `404` до
+  модели); `mimo-v2.5` @ `deepinfra/fp8` воспроизвёл отказ Алексея один в один
+  (`reasoning_tokens: 2999`, пустой `content`) и **не починился** от `effort: minimal` —
+  заведено в [about/KNOWN_ISSUES.md](about/KNOWN_ISSUES.md); маршрут по умолчанию не изменился
+  (валидный ответ, $0.00044, 3.1 с).
+
 - 2026-09-02 · Код прогона вместо заглушки (T-09, [#20](../../issues/20)): `main.py` читает
   `input/`, шлёт по маршруту из `config.yaml`, кладёт **сырые** ответы в
   `output/<run-id>/item_XX.json`, разобранные — рядом в `*.answer.json`, лог прогона
