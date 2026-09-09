@@ -1,5 +1,20 @@
-# Несекретная конфигурация утилиты.
+# Несекретная конфигурация прогона.
 # Секреты хранить в .env, не здесь.
 
 input_dir: input
 output_dir: output
+
+prompt_path: prompt/system_v1.txt
+schema_path: schema/response.schema.json
+
+# Маршрут. По D-010 structured outputs держит связка модель+эндпоинт, а не модель, поэтому
+# провайдер закреплён тегом. Проверено рецептом T-02 — research/RECIPE_CALL_meta1ex.md.
+route:
+  endpoint: https://openrouter.ai/api/v1/chat/completions
+  model: google/gemini-2.5-flash-lite
+  provider_tag: google-ai-studio
+  allow_fallbacks: false    # иначе при отказе провайдера ответ придёт с другого маршрута молча
+  require_parameters: true  # маршрут обязан поддерживать response_format, а не проглотить его
+  temperature: 0
+  max_tokens: 3000
+  timeout_sec: 180
